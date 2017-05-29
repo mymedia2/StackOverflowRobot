@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import datetime
+import html
 import html.parser
 import json
 import re
@@ -29,8 +30,6 @@ class _HtmlSimplifying(html.parser.HTMLParser):
             self._tag_context = tag
         if tag == 'br':
             self.result.append('\n')
-        if tag == 'blockquote':
-            self.result.append('&gt;')
         if tag in ['ol', 'ul']:
             self._list_context.append({'tag': tag, 'counter': 0})
         if tag == 'li' and len(self._list_context) != 0:
@@ -66,8 +65,7 @@ class _HtmlSimplifying(html.parser.HTMLParser):
             # FIXME: the last substitution breaks emails
             text = text.replace('#', '#\N{word joiner}') \
                        .replace('@', '@\N{word joiner}')
-        self.result.append(text.replace('&', '&amp;').replace('"', '&quot;')
-                           .replace('<', '&lt;').replace('>', '&gt;'))
+        self.result.append(html.escape(text))
 
     def close(self):
         super().close()
@@ -79,8 +77,6 @@ def simplify_html(s):
     parser = _HtmlSimplifying()
     parser.feed(s)
     parser.close()
-    print(repr(s))
-    print(repr(parser.result))
     return parser.result
 
 _truncate_pattern = re.compile(r'\W*\w+')
@@ -103,28 +99,48 @@ def truncate_line(s, length, suffix="...", norm=len):
 
     return "".join(result) + suffix
 
-_clean_pattern, _compress_pattern = re.compile(r'<.*?>'), re.compile(r'&.*?;')
+_clean_pattern = re.compile(r'<.*?>')
 def clear_length(s):
-    """Compute length of the given string without tags and entities"""
+    """Compute length of the given string without tags and entities."""
 
-    return len(_compress_pattern.sub('%', _clean_pattern.sub('', s)))
+    return len(html.unescape(_clean_pattern.sub('', s)))
+
+_unclosed_pattern = re.compile(r'<([^/][^>]*)>[^<>]*$')
+def fix_unclosed_tags(s):
+    """Close a last unclosed tag."""
+
+    return _unclosed_pattern.sub(r'\g<0></\1>', s)
+
+def remove_tags(s):
+    return html.unescape(re.sub(r'\s+', ' ', _clean_pattern.sub('', s)))
+
 
 _MAX_POST_LENGTH = 4096
 _QUESTION_HEADER_TEMPLATE = \
     """<b>Question</b> <a href="{link}">{title}</a>\n\n"""
 _QUESTION_FOOTER_TEMPLATE = "\n\ntags: {tag_list}\n" + \
-    """asked {creation_date} by <a href="{owner_link}">{owner_name}</a>"""
+    """asked {creation_date} by {owner}"""
 _ANSWER_HEADER_TEMPLATE = \
     """{accepted_mark}<b>Answer</b> to <a href="{link}">{title}</a>\n\n"""
 _ANSWER_FOOTER_TEMPLATE = "\n\n" + \
-    """answered {creation_date} by <a href="{owner_link}">{owner_name}</a>"""
+    """answered {creation_date} by {owner}"""
 
 def construct_message(post):
     """Build a text of a Telegram message."""
 
+    link, title = post['link'], post['title']
+
+    accepted_mark = ""
+    if post.get('is_accepted'):
+        accepted_mark = "\N{white heavy check mark} "
+
+    if 'tags' in post:
+        tag_list = ", ".join(["[<b>" + t + "</b>]" for t in post['tags']])
+
     creation_date = datetime.date.fromtimestamp(post['creation_date'])
     current_date = datetime.date.today()
     if (current_date - creation_date).days == 0:
+        # TODO: implement output of accurate time
         creation_date = "today"
     elif (current_date - creation_date).days == 1:
         creation_date = "yesterday"
@@ -140,15 +156,13 @@ def construct_message(post):
             creation_date = creation_date.strftime("%b %d '%y")
     del current_date
 
-    if 'tags' in post:
-        tag_list = ", ".join(["[<b>" + t + "</b>]" for t in post['tags']])
-    accepted_mark = ""
-    if 'is_accepted' in post:
-        accepted_mark = "\N{white heavy check mark} "
-    link, title = post['link'], post['title']
-    owner_link, owner_name = post['owner']['link'], post['owner']['display_name']
+    owner = "No author"  # I don't quite understand when it's possible
+    if 'owner' in post:
+        owner = post['owner'].get('display_name', "Anonymous")
+        if 'link' in post['owner']:
+            owner = '<a href="{}">{}</a>'.format(post['owner']['link'], owner)
 
-    if 'answer_id' not in post:  # then this post is a question
+    if post['post_type'] == 'question':
         top = _QUESTION_HEADER_TEMPLATE.format(**locals())
         bottom = _QUESTION_FOOTER_TEMPLATE.format(**locals())
     else:
@@ -157,7 +171,7 @@ def construct_message(post):
     middle = truncate_line(simplify_html(post['body']).strip(),
                            _MAX_POST_LENGTH - clear_length(top) -
                            clear_length(bottom), norm=clear_length)
-    return top + middle + bottom
+    return top + fix_unclosed_tags(middle) + bottom
 
 def construct_keyboard(post):
     up_votes = "0"

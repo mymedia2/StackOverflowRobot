@@ -22,6 +22,8 @@ class _HtmlSimplifying(html.parser.HTMLParser):
         attrs = dict(attrs)
         if tag == 'kbd':
             tag = 'code'
+        if tag in ['h1', 'h2', 'h3']:
+            tag = 'b'
         if tag == 'a' and 'href' in attrs:
             self.result.append('<a href="{}">'.format(attrs['href']))
             self._tag_context = 'a'
@@ -46,6 +48,8 @@ class _HtmlSimplifying(html.parser.HTMLParser):
     def handle_endtag(self, tag):
         if tag == 'kbd':
             tag = 'code'
+        if tag in ['h1', 'h2', 'h3']:
+            tag = 'b'
         if tag in ['a', 'b', 'strong', 'i', 'em', 'code', 'pre'] and \
                 self._tag_context == tag:
             self.result.append('</{}>'.format(tag))

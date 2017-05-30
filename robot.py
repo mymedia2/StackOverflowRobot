@@ -4,6 +4,7 @@
 import os
 import telebot
 import stackoverflow
+import private_search
 import utils
 
 _STANDARD_FILTER = "!*i5nbupzVkd_nFQ_R3K24wS_Ib*wHM4j*K*R(VlvYEcL57*XBFrX*Dy-.zQW_5V9GMDr_."
@@ -15,7 +16,7 @@ so = stackoverflow.StackOverflow(_STANDARD_FILTER)
 def help(message):
     bot.send_message(message.chat.id, "Hello!")
 
-@bot.callback_query_handler(func=lambda l: True)
+@bot.callback_query_handler(func=lambda l: l.data == 'not_implemented')
 def callbacks(call):
     bot.answer_callback_query(call.id,
         "Not implemented yet \N{disappointed but relieved face}")
@@ -29,17 +30,20 @@ def inline_search(query):
         bot.answer_inline_query(query.id, [])
         return
 
-    questions = (p['question_id'] for p in data['items']
-                 if p['item_type'] == 'question')
-    questions = so.request('questions/{ids}', ids=';'.join(map(str, questions)),
-                           site='stackoverflow')
-    questions = {p['question_id']: p for p in questions['items']}
+    questions = [p['question_id'] for p in data['items']
+                 if p['item_type'] == 'question']
+    if questions:
+        questions = so.request('questions/{ids}',
+                               ids=';'.join(map(str, questions)),
+                               site='stackoverflow')
+        questions = {p['question_id']: p for p in questions['items']}
 
-    answers = (p['answer_id'] for p in data['items']
-               if p['item_type'] == 'answer')
-    answers = so.request('answers/' + ';'.join(map(str, answers)),
-                         site='stackoverflow')
-    answers = {p['answer_id']: p for p in answers['items']}
+    answers = [p['answer_id'] for p in data['items']
+               if p['item_type'] == 'answer']
+    if answers:
+        answers = so.request('answers/{ids}', ids=';'.join(map(str, answers)),
+                             site='stackoverflow')
+        answers = {p['answer_id']: p for p in answers['items']}
 
     results = list()
     for el in data['items']:
@@ -61,46 +65,29 @@ def inline_search(query):
 
     bot.answer_inline_query(query.id, results, cache_time=1)
 
+@bot.callback_query_handler(func=lambda l: l.data.startswith('next_question:'))
+def next_question(call):
+    paginator = private_search.SearchPaginator.goto_next_question(call.data)
+    private_search.show_search_result(bot, so, paginator)
+    paginator.save()
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
+    bot.answer_callback_query(call.id)
+
+@bot.callback_query_handler(func=lambda l: l.data.startswith('next_answer:'))
+def next_answer(call):
+    paginator = private_search.SearchPaginator.goto_next_answer(call.data)
+    private_search.show_answer_result(bot, so, paginator)
+    paginator.save()
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except telebot.apihelper.ApiException:
+        pass
+    bot.answer_callback_query(call.id)
+
 @bot.message_handler()
 def normal_search(message):
-    q_data = so.request('search/advanced', sort='relevance', order='desc',
-                        pagesize=1, site='stackoverflow', q=message.text)
-    if len(q_data['items']) == 0:
-        bot.send_message(message.chat.id, "Not found \N{disappointed face}")
-        return
-
-    question = q_data['items'][0]
-    question['post_type'] = 'question'
-    bot.send_message(message.chat.id, parse_mode='html',
-                     text=utils.construct_message(question),
-                     reply_markup=utils.construct_keyboard(question),
-                     disable_web_page_preview=True)
-
-    a_data = so.request('questions/{ids}/answers', ids=question['question_id'],
-                        sort='votes', order='desc', pagesize=1,
-                        site='stackoverflow')
-    if len(a_data['items']) != 0:
-        answer = a_data['items'][0]
-        answer['post_type'] = 'answer'
-        bot.send_message(message.chat.id, parse_mode='html',
-                         text=utils.construct_message(answer),
-                         reply_markup=utils.construct_keyboard(answer),
-                         disable_web_page_preview=True)
-
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    if len(a_data['items']) == 0:
-        summary = "No answers \N{pensive face}"
-    elif not a_data['has_more']:
-        summary = "No more answers \N{smirking face}"
-    else:
-        summary = "{} answers in total\N{smiling face with sunglasses}" \
-                  .format(question['answer_count'])
-        keyboard.add(telebot.types.InlineKeyboardButton("\u25b6 Next answer",
-                     callback_data="not_implemented"))
-    if q_data['has_more']:
-        keyboard.add(telebot.types.InlineKeyboardButton("\u27a1 Next question",
-                     callback_data="not_implemented"))
-
-    bot.send_message(message.chat.id, summary, reply_markup=keyboard)
+    paginator = private_search.SearchPaginator(message.chat.id, message.text)
+    private_search.show_search_result(bot, so, paginator)
+    paginator.save()
 
 bot.polling(timeout=50)

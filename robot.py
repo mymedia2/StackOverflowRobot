@@ -14,7 +14,11 @@ so = stackoverflow.StackOverflow(_STANDARD_FILTER)
 
 @bot.message_handler(commands=['start', 'help'])
 def help(message):
-    bot.send_message(message.chat.id, "Hello!")
+    bot.send_message(message.chat.id, """\
+Hello! I was made to simplify search for questions and answers on \
+stackoverflow.com and other Stack Exchange sites. I do the finding on the main \
+SO by default, but you can tell me to search on another site by typing its \
+name at the beginning of your query.""", disable_web_page_preview=True)
 
 @bot.callback_query_handler(func=lambda l: l.data == 'not_implemented')
 def callbacks(call):
@@ -22,27 +26,28 @@ def callbacks(call):
         "Not implemented yet \N{disappointed but relieved face}")
 
 @bot.inline_handler(func=lambda l: True)
-def inline_search(query):
-    data = so.request('search/excerpts', sort='relevance', order='desc',
-                         pagesize=10, site='stackoverflow', q=query.query)
+def inline_search(iquery):
+    area, query = utils.detect_target_site(iquery.query)
+    print(area, query)
+    data = so.request('search/excerpts', q=query, sort='relevance',
+                      order='desc', pagesize=10, site=area)
     if len(data['items']) == 0:
         # TODO: ...
-        bot.answer_inline_query(query.id, [])
+        bot.answer_inline_query(iquery.id, [])
         return
 
     questions = [p['question_id'] for p in data['items']
                  if p['item_type'] == 'question']
     if questions:
-        questions = so.request('questions/{ids}',
-                               ids=';'.join(map(str, questions)),
-                               site='stackoverflow')
+        questions = so.request('questions/{ids}', site=area,
+                               ids=';'.join(map(str, questions)))
         questions = {p['question_id']: p for p in questions['items']}
 
     answers = [p['answer_id'] for p in data['items']
                if p['item_type'] == 'answer']
     if answers:
         answers = so.request('answers/{ids}', ids=';'.join(map(str, answers)),
-                             site='stackoverflow')
+                             site=area)
         answers = {p['answer_id']: p for p in answers['items']}
 
     results = list()
@@ -75,7 +80,7 @@ def inline_search(query):
             description=utils.truncate_line(
                 utils.remove_tags(post['body']), 100)))
 
-    bot.answer_inline_query(query.id, results, cache_time=1)
+    bot.answer_inline_query(iquery.id, results, cache_time=1)
 
 @bot.callback_query_handler(func=lambda l: l.data.startswith('next_question:'))
 def next_question(call):
@@ -98,7 +103,9 @@ def next_answer(call):
 
 @bot.message_handler()
 def normal_search(message):
-    paginator = private_search.SearchPaginator(message.chat.id, message.text)
+    area, query = utils.detect_target_site(message.text)
+    print(area, query)
+    paginator = private_search.SearchPaginator(message.chat.id, query, area)
     private_search.show_search_result(bot, so, paginator)
     paginator.save()
 

@@ -9,10 +9,11 @@ import telebot
 import utils
 
 class SearchPaginator:
-    def __init__(self, target_chat_id, query_string):
+    def __init__(self, target_chat_id, query_string, target_site):
         self._data = base64.urlsafe_b64encode(os.urandom(12))[:-1].decode()
         self.target_chat_id = target_chat_id
         self.query_string = query_string
+        self.target_site = target_site
         self.question_number = 1
         self.answer_number = 1
         self.question_id = None
@@ -56,11 +57,13 @@ class SearchPaginator:
 
 def show_search_result(bot, so, paginator):
     q_data = so.request('search/advanced', q=paginator.query_string,
-                        sort='relevance', order='desc', site='stackoverflow',
-                        page=paginator.question_number, pagesize=1)
+                        sort='relevance', order='desc', pagesize=1,
+                        page=paginator.question_number,
+                        site=paginator.target_site)
     paginator.has_more_questions = q_data['has_more']
     if len(q_data['items']) == 0:
-        bot.send_message(target_chat_id, "Not found \N{disappointed face}")
+        bot.send_message(paginator.target_chat_id,
+                         "Not found \N{disappointed face}")
         return
 
     question = q_data['items'][0]
@@ -76,7 +79,7 @@ def show_search_result(bot, so, paginator):
 
 def show_answer_result(bot, so, paginator):
     a_data = so.request('questions/{ids}/answers', ids=paginator.question_id,
-                        sort='votes', order='desc', site='stackoverflow',
+                        sort='votes', order='desc', site=paginator.target_site,
                         page=paginator.answer_number, pagesize=1)
     if len(a_data['items']) != 0:
         answer = a_data['items'][0]

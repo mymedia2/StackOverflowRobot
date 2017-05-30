@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import csv
 import datetime
 import html
 import html.parser
 import json
 import re
 import telebot
+
+with open('sites.csv') as _f:
+    sites = dict(csv.reader(_f))
 
 class _HtmlSimplifying(html.parser.HTMLParser):
 
@@ -197,3 +201,10 @@ def construct_keyboard(post):
     result = telebot.types.InlineKeyboardMarkup()
     result.add(*buttons)
     return result
+
+def detect_target_site(query_string):
+    l = query_string.split(maxsplit=1)
+    if len(l) == 2 and l[0].lower() in sites:
+        return sites[l[0].lower()], l[1]
+    else:
+        return 'stackoverflow', query_string

@@ -7,7 +7,7 @@ import stackoverflow
 import private_search
 import utils
 
-_STANDARD_FILTER = "!*i5nbupzVkd_nFQ_R3K24wS_Ib*wHM4j*K*R(VlvYEcL57*XBFrX*Dy-.zQW_5V9GMDr_."
+_STANDARD_FILTER = "!8463uz9IO9g-pvq5plHxzY3C8l9vpUT0hxO81BfFRHdrLvA4aSNsX2WEshLSfzNGNhF"
 
 bot = telebot.TeleBot(os.environ['BOT_TOKEN'])
 so = stackoverflow.StackOverflow(_STANDARD_FILTER)
@@ -51,8 +51,19 @@ def inline_search(query):
             post = questions[el['question_id']]
         else:
             post = answers[el['answer_id']]
-        post['post_id'] = post.get('question_id') or post.get('answer_id')
+        post['post_id'] = post.get('answer_id') or post.get('question_id')
         post['post_type'] = el['item_type']
+
+        if post['post_type'] == 'question':
+            if not post['is_answered']:
+                preview = 'https://i.stack.imgur.com/h3lUT.png'
+            else:
+                preview = 'https://i.stack.imgur.com/LEUnx.png'
+        else:
+            if not post['is_accepted']:
+                preview = 'https://i.stack.imgur.com/QaNW7.png'
+            else:
+                preview = 'https://i.stack.imgur.com/qzQHK.png'
 
         results.append(telebot.types.InlineQueryResultArticle(
             str(post['post_id']), utils.remove_tags(post['title']),
@@ -60,6 +71,7 @@ def inline_search(query):
                 utils.construct_message(post), parse_mode='html',
                 disable_web_page_preview=True),
             reply_markup=utils.construct_keyboard(post), url=post['link'],
+            thumb_url=preview, thumb_width=48, thumb_height=48,
             description=utils.truncate_line(
                 utils.remove_tags(post['body']), 100)))
 

@@ -10,7 +10,7 @@ import utils
 _STANDARD_FILTER = "!8463uz9IO9g-pvq5plHxzY3C8l9vpUT0hxO81BfFRHdrLvA4aSNsX2WEshLSfzNGNhF"
 
 bot = telebot.TeleBot(os.environ['BOT_TOKEN'])
-so = stackoverflow.StackOverflow(_STANDARD_FILTER)
+so = stackoverflow.StackOverflow(os.environ['SO_KEY'], _STANDARD_FILTER)
 
 @bot.message_handler(commands=['start', 'help'])
 def help(message):

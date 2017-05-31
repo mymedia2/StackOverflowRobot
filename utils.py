@@ -204,6 +204,8 @@ def construct_keyboard(post):
 
 def detect_target_site(query_string):
     l = query_string.split(maxsplit=1)
+    if len(l) == 1:
+        l.append('')
     if len(l) == 2 and l[0].lower() in sites:
         return sites[l[0].lower()], l[1]
     else:

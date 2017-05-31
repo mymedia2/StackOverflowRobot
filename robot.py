@@ -28,9 +28,11 @@ def callbacks(call):
 @bot.inline_handler(func=lambda l: True)
 def inline_search(iquery):
     area, query = utils.detect_target_site(iquery.query)
-    print(area, query)
+    curr_p = int(iquery.offset or 1)
+    # TODO: It's needed a solution to optimize splitting into pages. Now, if a
+    # page is too big, Telegram API says, "414 Request-URI Too Large."
     data = so.request('search/excerpts', q=query, sort='relevance',
-                      order='desc', pagesize=10, site=area)
+                      order='desc', page=curr_p, pagesize=7, site=area)
     if len(data['items']) == 0:
         # TODO: ...
         bot.answer_inline_query(iquery.id, [])
@@ -80,7 +82,11 @@ def inline_search(iquery):
             description=utils.truncate_line(
                 utils.remove_tags(post['body']), 100)))
 
-    bot.answer_inline_query(iquery.id, results, cache_time=1)
+    if data['has_more']:
+        bot.answer_inline_query(iquery.id, results, cache_time=1,
+                                next_offset=curr_p + 1)
+    else:
+        bot.answer_inline_query(iquery.id, results, cache_time=1)
 
 @bot.callback_query_handler(func=lambda l: l.data.startswith('next_question:'))
 def next_question(call):
@@ -104,9 +110,9 @@ def next_answer(call):
 @bot.message_handler()
 def normal_search(message):
     area, query = utils.detect_target_site(message.text)
-    print(area, query)
     paginator = private_search.SearchPaginator(message.chat.id, query, area)
     private_search.show_search_result(bot, so, paginator)
     paginator.save()
 
-bot.polling(timeout=50)
+if __name__ == '__main__':
+    bot.polling(timeout=50)

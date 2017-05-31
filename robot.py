@@ -12,13 +12,37 @@ _STANDARD_FILTER = "!8463uz9IO9g-pvq5plHxzY3C8l9vpUT0hxO81BfFRHdrLvA4aSNsX2WEshL
 bot = telebot.TeleBot(os.environ['BOT_TOKEN'])
 so = stackoverflow.StackOverflow(os.environ['SO_KEY'], _STANDARD_FILTER)
 
-@bot.message_handler(commands=['start', 'help'])
-def help(message):
-    bot.send_message(message.chat.id, """\
+_START_MESSAGE_TEMPLATE = """\
 Hello! I was made to simplify search for questions and answers on \
 stackoverflow.com and other Stack Exchange sites. I do the finding on the main \
 SO by default, but you can tell me to search on another site by typing its \
-name at the beginning of your query.""", disable_web_page_preview=True)
+name at the beginning of your query.\nBy the way, my source code is available \
+on [GitHub](https://github.com/mymedia2/StackOverflowRobot) under AGPL."""
+
+@bot.message_handler(commands=['start', 'help'])
+def help_command(message):
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.add(telebot.types.InlineKeyboardButton(
+        "\N{rightwards arrow with hook} Try it now...",
+        switch_inline_query=""))
+    bot.send_message(message.chat.id, _START_MESSAGE_TEMPLATE,
+                     parse_mode='markdown', disable_web_page_preview=True,
+                     reply_markup=keyboard)
+
+@bot.message_handler(commands=['search'])
+def search_command(message):
+    l = message.text.split(maxsplit=1)
+    if len(l) == 1:
+        if message.chat.type == 'private':
+            bot.send_message(message.chat.id, "Please type your query")
+        else:
+            bot.reply_to(message, "What do you want to find?",
+                         reply_markup=telebot.types.ForceReply(True))
+    else:
+        area, query = utils.detect_target_site(l[1])
+        paginator = private_search.SearchPaginator(message.chat.id, query, area)
+        private_search.show_search_result(bot, so, paginator)
+        paginator.save()
 
 @bot.callback_query_handler(func=lambda l: l.data == 'not_implemented')
 def callbacks(call):
@@ -109,6 +133,9 @@ def next_answer(call):
 
 @bot.message_handler()
 def normal_search(message):
+    if message.chat.type != 'private' and not (message.reply_to_message and
+            message.reply_to_message.from_user.id == bot.get_me().id):
+        return
     area, query = utils.detect_target_site(message.text)
     paginator = private_search.SearchPaginator(message.chat.id, query, area)
     private_search.show_search_result(bot, so, paginator)
